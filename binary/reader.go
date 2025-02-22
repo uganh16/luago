@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+
+	"github.com/uganh16/luago/vm"
 )
 
 type reader struct {
@@ -74,10 +76,10 @@ func (r *reader) readProto(order binary.ByteOrder, parentSource string) *Prototy
 	}
 }
 
-func (r *reader) readCode(order binary.ByteOrder) []uint32 {
-	code := make([]uint32, r.readUint32(order))
+func (r *reader) readCode(order binary.ByteOrder) []vm.Instruction {
+	code := make([]vm.Instruction, r.readUint32(order))
 	for i := range code {
-		code[i] = r.readUint32(order)
+		code[i] = vm.Instruction(r.readUint32(order))
 	}
 	return code
 }

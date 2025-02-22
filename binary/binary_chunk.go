@@ -3,6 +3,8 @@ package binary
 import (
 	"fmt"
 	"os"
+
+	"github.com/uganh16/luago/vm"
 )
 
 const (
@@ -55,7 +57,7 @@ type Prototype struct {
 	NumParams       byte
 	IsVararg        bool
 	MaxStackSize    byte
-	Code            []uint32
+	Code            []vm.Instruction
 	Constants       []interface{}
 	Upvalues        []Upvalue
 	Protos          []*Prototype
