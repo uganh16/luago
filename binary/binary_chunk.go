@@ -21,15 +21,6 @@ const (
 	LUAC_NUM         = 370.5
 )
 
-const (
-	LUA_TNIL     = 0x00
-	LUA_TBOOLEAN = 0x01
-	LUA_TNUMFLT  = 0x03
-	LUA_TNUMINT  = 0x13
-	LUA_TSHRSTR  = 0x04
-	LUA_TLNGSTR  = 0x14
-)
-
 type binaryChunk struct {
 	header
 	sizeUpvalues byte

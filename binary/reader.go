@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/uganh16/luago/api"
 	"github.com/uganh16/luago/vm"
 )
 
@@ -88,15 +89,15 @@ func (r *reader) readConstants(order binary.ByteOrder) []interface{} {
 	constants := make([]interface{}, r.readUint32(order))
 	for i := range constants {
 		switch r.readByte() {
-		case LUA_TNIL:
+		case api.LUA_TNIL:
 			constants[i] = nil
-		case LUA_TBOOLEAN:
+		case api.LUA_TBOOLEAN:
 			constants[i] = r.readByte() != 0
-		case LUA_TNUMINT:
+		case api.LUA_TNUMINT:
 			constants[i] = r.readLuaInteger(order)
-		case LUA_TNUMFLT:
+		case api.LUA_TNUMFLT:
 			constants[i] = r.readLuaNumber(order)
-		case LUA_TSHRSTR, LUA_TLNGSTR:
+		case api.LUA_TSHRSTR, api.LUA_TLNGSTR:
 			constants[i] = r.readString(order)
 		default:
 			panicF("corrupted")
