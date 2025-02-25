@@ -2,6 +2,9 @@ package api
 
 import (
 	"fmt"
+	"math"
+
+	"github.com/uganh16/luago/number"
 )
 
 type LuaState struct {
@@ -155,51 +158,175 @@ func (L *LuaState) TypeName(t LuaType) string {
 
 func (L *LuaState) ToNumberX(idx int) (float64, bool) {
 	val, _ := L.stackGet(idx)
-	switch val := val.(type) {
-	case float64:
-		return val, true
-	case int64:
-		return float64(val), true
-	/* @todo string convertible to number? */
-	default:
-		return 0.0, false
-	}
+	return toNumber(val)
 }
 
 func (L *LuaState) ToIntegerX(idx int) (int64, bool) {
 	val, _ := L.stackGet(idx)
-	switch val := val.(type) {
-	case int64:
-		return val, true
-	/* @todo try to convert a value to an integer */
-	default:
-		return 0, false
-	}
+	return toInteger(val)
 }
 
 func (L *LuaState) ToBoolean(idx int) bool {
 	val, _ := L.stackGet(idx)
-	switch val := val.(type) {
-	case nil:
-		return false
-	case bool:
-		return val
-	default:
-		return true
-	}
+	return toBoolean(val)
 }
 
 func (L *LuaState) ToStringX(idx int) (string, bool) {
 	val, _ := L.stackGet(idx)
-	switch val := val.(type) {
-	case string:
-		return val, true
-	case float64, int64:
-		str := fmt.Sprintf("%v", val)
+	if str, ok := val.(string); ok {
+		return str, ok
+	} else if str, ok = toString(val); ok {
 		L.stackSet(idx, str)
-		return str, true
+		return str, ok
+	}
+	return "", false
+}
+
+/**
+ * comparison and arithmetic functions
+ */
+
+const (
+	LUA_OPADD  = iota // +
+	LUA_OPSUB         // -
+	LUA_OPMUL         // *
+	LUA_OPMOD         // %
+	LUA_OPPOW         // ^
+	LUA_OPDIV         // /
+	LUA_OPIDIV        // //
+	LUA_OPBAND        // &
+	LUA_OPBOR         // |
+	LUA_OPBXOR        // ~
+	LUA_OPSHL         // <<
+	LUA_OPSHR         // >>
+	LUA_OPUNM         // - (unary minus)
+	LUA_OPBNOT        // ~
+)
+
+type ArithOp = int
+
+func (L *LuaState) Arith(op ArithOp) {
+	var a, b, r luaValue
+	b = L.stackPop()
+	if op != LUA_OPUNM && op != LUA_OPBNOT {
+		a = L.stackPop()
+	} else {
+		a = b
+	}
+
+	var iFunc func(int64, int64) int64
+	var fFunc func(float64, float64) float64
+
+	switch op {
+	case LUA_OPADD:
+		iFunc = func(a, b int64) int64 { return a + b }
+		fFunc = func(a, b float64) float64 { return a + b }
+	case LUA_OPSUB:
+		iFunc = func(a, b int64) int64 { return a - b }
+		fFunc = func(a, b float64) float64 { return a - b }
+	case LUA_OPMUL:
+		iFunc = func(a, b int64) int64 { return a * b }
+		fFunc = func(a, b float64) float64 { return a * b }
+	case LUA_OPMOD:
+		iFunc = number.IMod
+		fFunc = number.FMod
+	case LUA_OPPOW:
+		fFunc = math.Pow
+	case LUA_OPDIV:
+		fFunc = func(a, b float64) float64 { return a / b }
+	case LUA_OPIDIV:
+		iFunc = number.IFloorDiv
+		fFunc = number.FFloorDiv
+	case LUA_OPBAND:
+		iFunc = func(a, b int64) int64 { return a & b }
+	case LUA_OPBOR:
+		iFunc = func(a, b int64) int64 { return a | b }
+	case LUA_OPBXOR:
+		iFunc = func(a, b int64) int64 { return a ^ b }
+	case LUA_OPSHL:
+		iFunc = number.ShiftLeft
+	case LUA_OPSHR:
+		iFunc = number.ShiftRight
+	case LUA_OPUNM:
+		iFunc = func(a, _ int64) int64 { return -a }
+		fFunc = func(a, _ float64) float64 { return -a }
+	case LUA_OPBNOT:
+		iFunc = func(a, _ int64) int64 { return ^a }
 	default:
-		return "", false
+		panic(fmt.Sprintf("invalid arith op: %d", op))
+	}
+
+	if fFunc == nil { // bitwise operation
+		if a, ok := toInteger(a); ok {
+			if b, ok := toInteger(b); ok {
+				r = iFunc(a, b)
+			}
+		}
+	} else {
+		if iFunc != nil {
+			if a, ok := a.(int64); ok {
+				if b, ok := b.(int64); ok {
+					r = iFunc(a, b)
+				}
+			}
+		}
+
+		if r == nil {
+			if a, ok := toNumber(a); ok {
+				if b, ok := toNumber(b); ok {
+					r = fFunc(a, b)
+				}
+			}
+		}
+	}
+
+	if r != nil {
+		L.stackPush(r)
+	} else {
+		switch op {
+		case LUA_OPBAND, LUA_OPBOR, LUA_OPBXOR, LUA_OPSHL, LUA_OPSHR:
+			_, ok1 := toNumber(a)
+			_, ok2 := toNumber(b)
+			if ok1 && ok2 {
+				panic(runtimeError("number has no integer representation")) // @todo
+			} else {
+				if !ok1 {
+					b = a
+				}
+				panic(typeError(L, b, "perform bitwise operation on"))
+			}
+		default:
+			if _, ok := toNumber(a); !ok {
+				b = a
+			}
+			panic(typeError(L, b, "perform arithmetic on"))
+		}
+	}
+}
+
+const (
+	LUA_OPEQ = iota // ==
+	LUA_OPLT        // <
+	LUA_OPLE        // <=
+)
+
+type CompareOp = int
+
+func (L *LuaState) Compare(idx1, idx2 int, op CompareOp) bool {
+	a, ok1 := L.stackGet(idx1)
+	b, ok2 := L.stackGet(idx2)
+	if !ok1 || !ok2 {
+		return false
+	}
+	switch op {
+	case LUA_OPEQ:
+		return equal(a, b)
+	case LUA_OPLT:
+		return lessThan(L, a, b)
+	case LUA_OPLE:
+		return lessEqual(L, a, b)
+	default:
+		panic(fmt.Sprintf("invalid compare op: %d", op))
 	}
 }
 
@@ -225,6 +352,44 @@ func (L *LuaState) PushString(s string) {
 
 func (L *LuaState) PushBoolean(b bool) {
 	L.stackPush(b)
+}
+
+/**
+ * miscellaneous functions
+ */
+
+func (L *LuaState) Concat(n int) {
+	if n == 0 {
+		L.stackPush("")
+	}
+	if n >= 2 {
+		b := L.stackPop()
+		for n > 1 {
+			a := L.stackPop()
+			n--
+			if s1, ok := toString(a); ok {
+				if s2, ok := toString(b); ok {
+					b = s1 + s2
+					continue
+				}
+			}
+			// @todo
+			if _, ok := toString(a); ok {
+				a = b
+			}
+			panic(typeError(L, a, "concatenate"))
+		}
+		L.stackPush(b)
+	}
+}
+
+func (L *LuaState) Len(idx int) {
+	val, _ := L.stackGet(idx)
+	if str, ok := val.(string); ok {
+		L.stackPush(int64(len(str)))
+	} else {
+		typeError(L, val, "get length of")
+	}
 }
 
 /**

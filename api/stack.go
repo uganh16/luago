@@ -15,6 +15,7 @@ func (L *LuaState) stackPop() luaValue {
 	top--
 	val := L.stack[top]
 	L.stack[top] = nil
+	L.stack = L.stack[:top]
 	return val
 }
 
